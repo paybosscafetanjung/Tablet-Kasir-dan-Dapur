@@ -863,7 +863,8 @@
         // === LOGIKA AUTHENTICATION (LOGIN) ===
         onAuthStateChanged(auth, (user) => {
             if (user) {
-                const managerEmails = ['Paybosscafetanjung@gmail.com'];
+                // [EDIT] Menambahkan email baru sebagai manajer
+                const managerEmails = ['fedrik.christian07@gmail.com', 'paybosscafetanjung@gmail.com'];
                 let userRole = null;
 
                 if (managerEmails.includes(user.email)) {
@@ -1203,7 +1204,7 @@
                 div.innerHTML = `
                     <div class="menu-item-info">
                         ${item.name}
-                        <span>Rp ${item.price.toLocaleString('id-ID')}</span>
+                        <span>Rp ${(item.price || 0).toLocaleString('id-ID')}</span>
                     </div>
                     <button class="toggle-btn ${availabilityClass}" 
                             data-id="${item.id}" 
