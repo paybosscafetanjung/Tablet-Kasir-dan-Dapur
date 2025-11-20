@@ -785,7 +785,8 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
         import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, serverTimestamp, query, where, getDocs, getDoc, Timestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-        import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+        // [FIX] Menambahkan createUserWithEmailAndPassword ke import untuk menangani pembuatan akun staf otomatis
+        import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
         // Konfigurasi Firebase Anda
         const firebaseConfig = {
@@ -804,8 +805,11 @@
         
         // --- KONFIGURASI LOGIN STAF ---
         // Ganti angka ini dengan PIN staf yang Anda inginkan
-        const STAFF_PIN_CODE = "1234"; 
-        
+        const STAFF_PIN_CODE = "2525"; 
+        // [FIX] Kredensial Akun Bersama (Shared Credentials) untuk staf
+        const SHARED_STAFF_EMAIL = "staff-entry@payboss.com";
+        const SHARED_STAFF_PASS = "payboss-staff-secure-access"; 
+
         // --- HOOK INTEGRASI NOTIFIKASI (1) ---
         let __activeOrdersShadow = []; // keep last active list
         // --- AKHIR HOOK ---
@@ -859,22 +863,16 @@
         // === LOGIKA AUTHENTICATION (LOGIN) ===
         onAuthStateChanged(auth, (user) => {
             if (user) {
-                // Logika menentukan role berdasarkan tipe login
-                // Jika login anonim (tanpa email), kita anggap STAFF
-                // Jika punya email, kita cek apakah MANAGER
-                
-                const managerEmails = ['Paybosscafetanjung@gmail.com'];
+                const managerEmails = ['fedrik.christian07@gmail.com'];
                 let userRole = null;
 
-                if (user.isAnonymous) {
-                    // User Login pakai PIN (Anonymous) -> Staff
-                    userRole = 'staff';
-                } else if (managerEmails.includes(user.email)) {
-                    // User Login pakai Email yang terdaftar -> Manager
+                if (managerEmails.includes(user.email)) {
                     userRole = 'manager';
+                } else if (user.email === SHARED_STAFF_EMAIL) {
+                    // User login pakai akun shared -> Staff
+                    userRole = 'staff';
                 } else {
-                    // User Login pakai Email tapi bukan manager -> Staff (opsional, untuk staff lama)
-                    // Atau tolak akses
+                    // Fallback untuk email lain -> Staff
                     userRole = 'staff'; 
                 }
 
@@ -903,21 +901,45 @@
             }
         });
 
-        loginForm.addEventListener('submit', (e) => {
+        loginForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             loginError.classList.add('hidden');
+            const submitBtn = document.getElementById('login-submit-btn');
             
             if (currentLoginMode === 'staff') {
                 // === LOGIN STAF PAKAI PIN ===
                 const inputPin = document.getElementById('staff-pin').value.trim();
                 
                 if (inputPin === STAFF_PIN_CODE) {
-                    // Jika PIN benar, masuk secara Anonymous ke Firebase
-                    signInAnonymously(auth).catch((error) => {
-                        console.error(error);
-                        loginError.textContent = "Gagal login sistem. Periksa koneksi.";
-                        loginError.classList.remove('hidden');
-                    });
+                    submitBtn.disabled = true;
+                    submitBtn.textContent = "Memproses Login...";
+
+                    // [FIX] Gunakan Shared Email/Pass alih-alih Anonymous
+                    // Ini menghindari error "admin-restricted-operation" jika Anonymous Auth dimatikan
+                    try {
+                        await signInWithEmailAndPassword(auth, SHARED_STAFF_EMAIL, SHARED_STAFF_PASS);
+                    } catch (error) {
+                        // Jika user tidak ditemukan, buatkan akunnya secara otomatis!
+                        if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password') {
+                            try {
+                                console.log("Akun staf belum ada, membuat baru...");
+                                await createUserWithEmailAndPassword(auth, SHARED_STAFF_EMAIL, SHARED_STAFF_PASS);
+                                // Setelah create, firebase otomatis login
+                            } catch (createErr) {
+                                console.error("Gagal membuat akun staf:", createErr);
+                                loginError.textContent = "Gagal inisialisasi akun staf: " + createErr.message;
+                                loginError.classList.remove('hidden');
+                                submitBtn.disabled = false;
+                                submitBtn.textContent = "Masuk";
+                            }
+                        } else {
+                            console.error("Login staf error:", error);
+                            loginError.textContent = "Login gagal: " + error.message;
+                            loginError.classList.remove('hidden');
+                            submitBtn.disabled = false;
+                            submitBtn.textContent = "Masuk";
+                        }
+                    }
                 } else {
                     loginError.textContent = "PIN salah. Silakan coba lagi.";
                     loginError.classList.remove('hidden');
