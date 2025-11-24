@@ -690,9 +690,6 @@
 
     // ===== HOOKS you can CALL from your main script =====
     
-    // [PERUBAHAN] Fungsi __kitchenNewOrderAlert DIHAPUS.
-    // Pemicu notifikasi dipindah ke aksi 'confirm' kasir di skrip <module>
-    
     // [PERUBAHAN] expose 's' dan 'chime' ke window agar bisa diakses skrip module
     window.__kitchenState = s;
     window.__kitchenChime = chime;
@@ -1079,83 +1076,62 @@
             kitchenQueue.forEach(order => kitchenContainer.appendChild(createOrderElement(order, 'kitchen')));
         }
         
+        // [FUNGSI YANG SUDAH DIPERBAIKI (FINAL)]
         function createOrderElement(order, type) {
             const div = document.createElement('div');
             div.className = 'order-item';
 
-            // --- HOOK INTEGRASI NOTIFIKASI (5) ---
-            // TIDAK MENARUH DI 'div' UTAMA, KARENA SELEKTOR ADD-ON MENCARI ANAK ELEMEN.
-            // KITA TARUH DI 'span.order-id' SESUAI REKOMENDASI HOOK (or inside any child element)
-            // div.dataset.orderId = order.id; // -> Ini tidak akan berfungsi dengan selector add-on
-            // --- AKHIR HOOK ---
+            // --- HOOK INTEGRASI NOTIFIKASI ---
+            // Kita taruh penanda ID di elemen utama juga untuk keamanan
+            div.dataset.orderId = order.id; 
 
             const statusMap = {
                 pending: { text: 'Menunggu', class: 'status-pending' },
                 preparing: { text: 'Dimasak', class: 'status-preparing' },
                 ready: { text: 'Siap', class: 'status-ready' }
             };
+
+            // [PERBAIKAN UTAMA DI SINI] 
+            // Kita pastikan 'order.items' itu ada. Jika kosong/error, kita pakai array kosong []
+            // Ini mencegah tampilan menu hilang (blank)
+            const safeItems = Array.isArray(order.items) ? order.items : [];
+
+            const itemsDisplay = safeItems.map(i => 
+                `${i.name || 'Item Tanpa Nama'}${i.variant ? ` (${i.variant})` : ''} x${i.qty || 1}`
+            ).join(', ') || '<span style="color:red;">Data menu kosong/rusak</span>';
+
+            const time = order.createdAt?.seconds ? new Date(order.createdAt.seconds * 1000).toLocaleTimeString('id-ID') : '...';
+            const detailsHtml = `<strong>Total:</strong> Rp ${(order.total || 0).toLocaleString('id-ID')} | <strong>Waktu:</strong> ${time}`;
+
+            // Logika Tombol (Tidak berubah, hanya dirapikan)
             let buttons = '';
             if (type === 'cashier') {
                 if (order.status === 'pending') {
                     buttons = `<button class="action-btn" data-id="${order.id}" data-action="confirm">Konfirmasi</button>`;
-                    // [--- TAMBAHAN TOMBOL BATAL ---]
                     buttons += ` <button class="action-btn danger" data-id="${order.id}" data-action="void-request">Batalkan</button>`;
                 } else if (order.status === 'ready') {
                     buttons = `<button class="action-btn success" data-id="${order.id}" data-action="complete">Selesaikan</button>`;
                 } else if (order.status === 'preparing') {
-                    // [--- TAMBAHAN TOMBOL BATAL ---]
-                    // Juga izinkan batal saat sedang dimasak (jika pelanggan tiba2 batal)
                     buttons += ` <button class="action-btn danger" data-id="${order.id}" data-action="void-request">Batalkan</button>`;
                 }
-                
-                // [--- TAMBAHAN UNTUK CETAK ---]
-                // Selalu tambahkan tombol cetak untuk kasir, terlepas dari statusnya
                 buttons += ` <button class="action-btn print" data-id="${order.id}" data-action="print">Cetak</button>`;
-                // [--- AKHIR TAMBAHAN ---]
-
-            // ==========================================================
-            // [--- PERUBAHAN 1: Tambah Tombol di Halaman Dapur ---]
-            // ==========================================================
             } else if (type === 'kitchen') {
                 if (order.status === 'pending') {
                     buttons = `<button class="action-btn" disabled>Tunggu Konfirmasi</button>`;
                 } else if (order.status === 'preparing') {
                     buttons = `<button class="action-btn success" data-id="${order.id}" data-action="finish">Selesai Masak</button>`;
                 }
-                
-                // [--- TAMBAHAN SESUAI PERMINTAAN ANDA ---]
-                // Tambahkan tombol Cetak (versi dapur) dan Batalkan
-                // Ini akan ditambahkan ke status 'pending' dan 'preparing'
-                // 'print-kitchen' adalah action baru untuk cetak sederhana
-                // 'void-request' adalah action lama untuk pembatalan
                 buttons += ` <button class="action-btn print" data-id="${order.id}" data-action="print-kitchen">Cetak Dapur</button>`;
                 buttons += ` <button class="action-btn danger" data-id="${order.id}" data-action="void-request">Batalkan</button>`;
-                // [--- AKHIR TAMBAHAN ---]
             }
-            // ==========================================================
-            // [--- AKHIR PERUBAHAN 1 ---]
-            // ==========================================================
-
-            // MODIFIKASI: Tambahkan logika untuk menampilkan varian jika ada
-            const items = order.items.map(i => 
-                `${i.name}${i.variant ? ` (${i.variant})` : ''} x${i.qty}`
-            ).join(', ');
-            const time = order.createdAt?.seconds ? new Date(order.createdAt.seconds * 1000).toLocaleTimeString('id-ID') : '...';
-
-            let detailsHtml;
-            // [--- REVISI PAJAK DIHILANGKAN ---]
-            // Kita sekarang selalu hanya menampilkan Total, karena subtotal dan pajak sudah di-nol-kan dari aplikasi pelanggan.
-            detailsHtml = `<strong>Total:</strong> Rp ${order.total.toLocaleString('id-ID')} | <strong>Waktu:</strong> ${time}`;
-            // [--- AKHIR REVISI ---]
 
             div.innerHTML = `
                 <div class="order-header">
-                    <!-- HOOK (5) DITERAPKAN DI SINI -->
                     <span class="order-id" data-order-id="${order.id}">${order.table} - ${order.customer}</span>
-                    <span class="order-status ${statusMap[order.status].class}">${statusMap[order.status].text}</span>
+                    <span class="order-status ${statusMap[order.status]?.class || ''}">${statusMap[order.status]?.text || order.status}</span>
                 </div>
                 <div class="order-details">
-                    <strong>Pesanan:</strong> ${items}<br>
+                    <strong>Pesanan:</strong> ${itemsDisplay}<br>
                     ${detailsHtml}
                 </div>
                 <div style="margin-top: 10px;">${buttons}</div>
@@ -1233,7 +1209,9 @@
                 const div = document.createElement('div');
                 div.className = 'order-item voided'; // Pakai style .order-item + .voided
                 
-                const items = order.items.map(i => 
+                // [PERBAIKAN JUGA DI SINI AGAR LOG TIDAK ERROR]
+                const safeItems = Array.isArray(order.items) ? order.items : [];
+                const items = safeItems.map(i => 
                     `${i.name}${i.variant ? ` (${i.variant})` : ''} x${i.qty}`
                 ).join(', ');
 
@@ -1247,7 +1225,7 @@
                     </div>
                     <div class="order-details">
                         <strong>Pesanan Asli:</strong> ${items}<br>
-                        <strong>Total Asli:</strong> Rp ${order.total.toLocaleString('id-ID')}<br>
+                        <strong>Total Asli:</strong> Rp ${(order.total||0).toLocaleString('id-ID')}<br>
                         <strong>Waktu Pesan:</strong> ${orderTime} | <strong>Waktu Batal:</strong> ${voidTime}
                     </div>
                     <div class="void-reason">
@@ -1290,7 +1268,8 @@
             }
             const sales = {};
             completedOrders.forEach(order => {
-                order.items.forEach(item => {
+                const safeItems = Array.isArray(order.items) ? order.items : [];
+                safeItems.forEach(item => {
                     // MODIFIKASI: Gunakan nama + varian sebagai kunci unik
                     const itemName = `${item.name}${item.variant ? ` (${item.variant})` : ''}`;
                     if (!sales[itemName]) sales[itemName] = { qty: 0, revenue: 0 };
@@ -1371,9 +1350,7 @@
                             // Panggil fungsi cetak baru
                             printReceipt(orderData);
                         } else {
-                            // Cek juga di completedOrders, siapa tahu sudah selesai tapi mau dicetak ulang
-                            // PERBAIKAN: Logika ini mungkin tidak akan berjalan karena tombol hilang setelah order selesai.
-                            // Tapi kita biarkan sebagai fallback jika Anda mengubah alur render.
+                            // Cek juga di completedOrders
                             const completedOrderRef = doc(db, 'completedOrders', orderId);
                             const completedOrderDoc = await getDoc(completedOrderRef);
                             if (completedOrderDoc.exists()) {
@@ -1508,7 +1485,10 @@
             receiptText += "--------------------------------\n";
 
             // --- Daftar Item (Lama) ---
-            order.items.forEach(item => {
+            // [PERBAIKAN AGAR TIDAK ERROR SAAT PRINT ITEM KOSONG]
+            const safeItems = Array.isArray(order.items) ? order.items : [];
+            
+            safeItems.forEach(item => {
                 // Baris 1: Nama Item (bisa 2 baris jika panjang)
                 let itemName = `${item.qty}x ${item.name}${item.variant ? ` (${item.variant})` : ''}`;
                 
@@ -1528,7 +1508,7 @@
 
             // --- Bagian Total (Lama, sudah benar) ---
             // (18 karakter untuk label, 14 untuk nilai)
-            receiptText += pad("GRAND TOTAL", 18) + padLeft(`Rp ${order.total.toLocaleString('id-ID')}`, 14) + "\n";
+            receiptText += pad("GRAND TOTAL", 18) + padLeft(`Rp ${(order.total||0).toLocaleString('id-ID')}`, 14) + "\n";
             receiptText += "--------------------------------\n";
 
             // --- Footer Struk (BARU) ---
@@ -1584,13 +1564,6 @@
             // --- Header Sederhana ---
             receiptText += center("--- PESANAN DAPUR ---\n");
             
-            // Nomor Antrian (Lama)
-            // const antrian = order.queueNumber 
-            //     ? `#${order.queueNumber} | ${order.table} - ${order.customer}` 
-            //     : `${order.table} - ${order.customer}`;
-                
-            // receiptText += center(antrian.toUpperCase()) + "\n";
-
             // [--- PERUBAHAN BARU: Menambahkan No Antrian & No Meja secara eksplisit ---]
             if (order.queueNumber) {
                 receiptText += center(`NO ANTRIAN: #${order.queueNumber}`) + "\n";
@@ -1606,7 +1579,10 @@
 
             // --- Daftar Item (Sederhana) ---
             // Ini adalah "menu pesanan" yang Anda minta
-            order.items.forEach(item => {
+            // [PERBAIKAN AGAR TIDAK ERROR SAAT PRINT ITEM KOSONG]
+            const safeItems = Array.isArray(order.items) ? order.items : [];
+
+            safeItems.forEach(item => {
                 // Hanya Nama Item, Kuantitas, dan Varian
                 let itemName = `${item.qty}x ${item.name}${item.variant ? ` (${item.variant})` : ''}`;
                 
@@ -1778,8 +1754,11 @@
                         const formattedTime = date.toLocaleTimeString('id-ID');
                         const customer = `"${order.customer}"`;
                         const table = order.table;
-                        // MODIFIKASI: Tambahkan varian ke dalam laporan CSV
-                        const items = `"${order.items.map(i => 
+                        
+                        // [PERBAIKAN AGAR TIDAK ERROR SAAT DOWNLOAD LAPORAN]
+                        const safeItems = Array.isArray(order.items) ? order.items : [];
+                        
+                        const items = `"${safeItems.map(i => 
                             `${i.name}${i.variant ? ` (${i.variant})` : ''} x${i.qty}`
                         ).join('; ')}"`;
                         // [--- REVISI PAJAK DIHILANGKAN ---]
